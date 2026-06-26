@@ -71,7 +71,13 @@ class WordEmbeddingFromScratch(L.LightningModule):
         return Adam(self.parameters(), lr = 0.1)
 
     def training_step(self, batch, batch_idx):
-        pass
+        
+        input_i, label_i = batch
+        output_i = self.forward(input_i)
+        loss = self.loss(output_i, label_i[0])
+
+        return loss
+
 
 
 inputs = torch.tensor([[1., 0., 0., 0.],
@@ -86,3 +92,50 @@ labels = torch.tensor([[0., 1., 0., 0.],
 
 dataset = TensorDataset(inputs, labels)
 dataloader = DataLoader(dataset)
+
+modelFromScratch = WordEmbeddingFromScratch()
+
+print("Before optimization, the parameters are...")
+# for name, param in modelFromScratch.named_parameters(): #Prints all of the named parameters in the class
+#     print(name, param.data)
+
+#Makes a dictionary of all of the named parameters in the class
+data = {
+    "w1": [modelFromScratch.input1_w1.item(), #The item() function returns the tensor values as python numbers
+           modelFromScratch.input2_w1.item(),
+           modelFromScratch.input3_w1.item(),
+           modelFromScratch.input4_w1.item()],
+    "w2": [modelFromScratch.input1_w2.item(), 
+           modelFromScratch.input2_w2.item(),
+           modelFromScratch.input3_w2.item(),
+           modelFromScratch.input4_w2.item()],
+    "token": ["Troll2", "is", "great", "Gymkata"],
+    "input": ["input1", "input2", "input3", "input4"]
+}
+df = pd.DataFrame(data) #Sorts the data into a pandas data structure
+print(df) #Prints the dictionary
+
+trainer = L.Trainer(max_epochs = 100)
+trainer.fit(modelFromScratch, train_dataloaders = dataloader)
+
+data = {
+    "w1": [modelFromScratch.input1_w1.item(), 
+           modelFromScratch.input2_w1.item(),
+           modelFromScratch.input3_w1.item(),
+           modelFromScratch.input4_w1.item()],
+    "w2": [modelFromScratch.input1_w2.item(), 
+           modelFromScratch.input2_w2.item(),
+           modelFromScratch.input3_w2.item(),
+           modelFromScratch.input4_w2.item()],
+    "token": ["Troll2", "is", "great", "Gymkata"],
+    "input": ["input1", "input2", "input3", "input4"]
+}
+df = pd.DataFrame(data)
+print(df)
+
+
+softmax = nn.Softmax(dim = 0) #dim=0 -> apply to rows of output values
+
+#Testing the model's predicted outputs
+print(torch.round(softmax(modelFromScratch(torch.tensor([[1.,0.,0.,0.]]))),
+                  decimals = 2))
