@@ -40,4 +40,42 @@ class WordEmbeddingWithLinear(L.LightningModule):
 
         return loss
 
+inputs = torch.tensor([[1., 0., 0., 0.],
+                       [0., 1., 0., 0.],
+                       [0., 0., 1., 0.],
+                       [0., 0., 0., 1.]])
+
+labels = torch.tensor([[0., 1., 0., 0.],
+                       [0., 0., 1., 0.],
+                       [0., 0., 0., 1.],
+                       [0., 1., 0., 0.]])
+
+dataset = TensorDataset(inputs, labels)
+dataloader = DataLoader(dataset)
+
+
+modelLinear = WordEmbeddingWithLinear()
+
+data = {
+    "w1": modelLinear.input_to_hidden.weight.detach()[0].numpy(), 
+    "w2": modelLinear.input_to_hidden.weight.detach()[1].numpy(),
+    "token": ["Troll2", "is", "great", "Gymkata"],
+    "input": ["input1", "input2", "input3", "input4"]
+}
+df = pd.DataFrame(data)
+print(df)
+
+trainer = L.Trainer(max_epochs=100)
+trainer.fit(modelLinear, train_dataloaders = dataloader)
+
+data = {
+    "w1": modelLinear.input_to_hidden.weight.detach()[0].numpy(), 
+    "w2": modelLinear.input_to_hidden.weight.detach()[1].numpy(),
+    "token": ["Troll2", "is", "great", "Gymkata"],
+    "input": ["input1", "input2", "input3", "input4"]
+}
+df = pd.DataFrame(data)
+print(df)
+
+
 
