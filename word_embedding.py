@@ -38,16 +38,39 @@ class WordEmbeddingFromScratch(L.LightningModule):
         self.output4_w1 = nn.Parameter(Uniform(min_value, max_value).sample())
         self.output4_w2 = nn.Parameter(Uniform(min_value, max_value).sample())
 
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.CrossEntropyLoss() #Does the softmax for us
 
 
     def forward(self, input):
-        pass
+        
+        input = input[0]
+
+        inputs_to_top_hidden = ((input[0] * self.input1_w1) +
+                                (input[1] * self.input2_w1) +
+                                (input[2] * self.input3_w1) +
+                                (input[3] * self.input4_w1))
+        
+        inputs_to_bottom_hidden = ((input[0] * self.input1_w2) +
+                                (input[1] * self.input2_w2) +
+                                (input[2] * self.input3_w2) +
+                                (input[3] * self.input4_w2))
+        
+        #Identity function (x = y), so no activation function is used
+
+        output1 = ((inputs_to_top_hidden * self.output1_w1) + (inputs_to_bottom_hidden * self.output1_w2))
+        output2 = ((inputs_to_top_hidden * self.output2_w1) + (inputs_to_bottom_hidden * self.output2_w2))
+        output3 = ((inputs_to_top_hidden * self.output3_w1) + (inputs_to_bottom_hidden * self.output3_w2))
+        output4 = ((inputs_to_top_hidden * self.output4_w1) + (inputs_to_bottom_hidden * self.output4_w2))
+
+        output_presoftmax = torch.stack([output1, output2, output3, output4]) #Stacks the 4 outputs into 1 variable
+
+        return(output_presoftmax)
+
 
     def configure_optimizers(self):
-        pass
+        return Adam(self.parameters(), lr = 0.1)
 
-    def trainign_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx):
         pass
 
 
