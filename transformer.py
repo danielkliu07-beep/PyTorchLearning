@@ -90,7 +90,8 @@ class Attention(nn.Module):
         #Calculating the Attention for Q, K, V:
         #The formula is SoftMax((QK^T / sqrt(d_k)) + M) * V
         sims = torch.matmul(q, k.transpose(dim0=self.row_dim, dim1 = self.col_dim)) #Similarity between the Queries and the Keys
-        scaled_sims = sims / torch.tensor(k.size(self.col_dim) ** 0.5) #Scale the similarities to the square root of the number of values used in each key
+        #scaled_sims = sims / torch.tensor(k.size(self.col_dim) ** 0.5) #Scale the similarities to the square root of the number of values used in each key
+        scaled_sims = sims / (k.size(self.col_dim) ** 0.5)
 
         #Masks are used to prevent early tokens from looking at later tokens
         if mask is not None: #Add the masks to the scaled similarities if there is one 
@@ -123,7 +124,7 @@ class DecoderOnlyTransformer(L.LightningModule):
         word_embeddings = self.we(token_ids)
         position_encoded = self.pe(word_embeddings)
 
-        mask = torch.tril(torch.ones((token_ids.size(dim = 0), token_ids.size(dim = 0)))) #First creates a one-only matrix of size (number of token_ids) x (number of token_ids)
+        mask = torch.tril(torch.ones((token_ids.size(dim = 0), token_ids.size(dim = 0))).to(token_ids.device)) #First creates a one-only matrix of size (number of token_ids) x (number of token_ids)
         #Then passes that matrix to torch.tril (Tri-L - Lower Triangle), which sets values not in the Lower Triangle to 0
         mask = mask == 0 #Turns 0s into Trues and 1s into Falses
 
@@ -145,7 +146,65 @@ class DecoderOnlyTransformer(L.LightningModule):
 
         return loss
 
-        
+model = DecoderOnlyTransformer(num_tokens = len(token_to_id), d_model = 2, max_len = 6)
+
+#Generating a response to a question
+model_input = torch.tensor([token_to_id["what"],
+                            token_to_id["is"],
+                            token_to_id["statquest"],
+                            token_to_id["<EOS>"]])
+input_length = model_input.size(dim = 0)
+
+predictions = model(model_input)
+predicted_id = torch.tensor([torch.argmax(predictions[-1, :])])
+predicted_ids = predicted_id
+
+max_length = 6
+for i in range(input_length, max_length):
+    if (predicted_id == token_to_id["<EOS>"]):
+        break
+
+    model_input = torch.cat((model_input, predicted_id))
+
+    predictions = model(model_input)
+    predicted_id = torch.tensor([torch.argmax(predictions[-1, :])])
+    predicted_ids = torch.cat((predicted_ids, predicted_id))
+
+print("Predicted Tokens:\n")
+for id in predicted_ids:
+    print("\t", id_to_token[id.item()])
+
+
+#Training
+
+trainer = L.Trainer(max_epochs = 30)
+trainer.fit(model, train_dataloaders= dataloader)
+
+#Generating a response to a question
+model_input = torch.tensor([token_to_id["what"],
+                            token_to_id["is"],
+                            token_to_id["statquest"],
+                            token_to_id["<EOS>"]])
+input_length = model_input.size(dim = 0)
+
+predictions = model(model_input)
+predicted_id = torch.tensor([torch.argmax(predictions[-1, :])])
+predicted_ids = predicted_id
+
+max_length = 6
+for i in range(input_length, max_length):
+    if (predicted_id == token_to_id["<EOS>"]):
+        break
+
+    model_input = torch.cat((model_input, predicted_id))
+
+    predictions = model(model_input)
+    predicted_id = torch.tensor([torch.argmax(predictions[-1, :])])
+    predicted_ids = torch.cat((predicted_ids, predicted_id))
+
+print("Predicted Tokens:\n")
+for id in predicted_ids:
+    print("\t", id_to_token[id.item()])
 
 
 
