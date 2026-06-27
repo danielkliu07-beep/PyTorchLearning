@@ -117,8 +117,33 @@ class DecoderOnlyTransformer(L.LightningModule):
         self.fc_layer = nn.Linear(in_features=d_model, out_features = num_tokens) #Fully connected layer - inputs: d_model, outputs: num_tokens
 
         self.loss = nn.CrossEntropyLoss() #Cross Entropy Loss function - automatically applies the loss function for us
-        
+    
+    def forward(self, token_ids):
 
+        word_embeddings = self.we(token_ids)
+        position_encoded = self.pe(word_embeddings)
+
+        mask = torch.tril(torch.ones((token_ids.size(dim = 0), token_ids.size(dim = 0)))) #First creates a one-only matrix of size (number of token_ids) x (number of token_ids)
+        #Then passes that matrix to torch.tril (Tri-L - Lower Triangle), which sets values not in the Lower Triangle to 0
+        mask = mask == 0 #Turns 0s into Trues and 1s into Falses
+
+        self_attention_values = self.self_attention(position_encoded, position_encoded, position_encoded, mask = mask)
+
+        residual_connection_values = position_encoded + self_attention_values
+
+        fc_layer_output = self.fc_layer(residual_connection_values)
+
+        return fc_layer_output
+    
+    def configure_optimizers(self):
+        return Adam(self.parameters(), lr = 0.1)
+    
+    def training_step(self, batch, batch_idx):
+        input_tokens, labels = batch
+        output = self.forward(input_tokens[0])
+        loss = self.loss(output, labels[0])
+
+        return loss
 
         
 
