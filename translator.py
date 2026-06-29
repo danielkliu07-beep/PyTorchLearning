@@ -49,16 +49,56 @@ class Encoder(nn.Module):
         self.num_layers = num_layers
 
         self.dropout = nn.Dropout(p) #Prevents overfitting during training by randomly zeroing out elements of an input tensor
-        self.embedding = nn.Embedding(num_embeddings = input_size, embedding_dim = embedding_size)
-        self.rnn = nn.LSTM(input_size = embedding_size, hidden_layers = hidden_size, num_layers = num_layers, dropout = p)
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout = p)
 
     def forward(self, x):
-        pass
+        #x shape: (seq_length, N)
+
+        embedding = self.dropout(self.embedding(x)) #apply dropout to the embedding of x
+        #embedding shape: (seq_length, N, embedding_size)
+        outputs, (hidden, cell) = self.rnn(embedding) #run it through the LSTM
+
+        #output is irrelevant, (hidden, cell) is the context vector
+
+        return hidden, cell
 
 
 
 class Decoder(nn.Module):
-    pass
+    
+    def __init__(self, input_size, embedding_size, hidden_size, output_size, num_layers, p):
+
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.dropout = nn.Dropout(p)
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout = 0)
+
+        self.fc = nn.Linear(hidden_size, output_size) #fully connected layer
+
+    def forward(self, x, hidden, cell):
+        #shape of x is (N) but we want (1, N)
+
+        x = x.unsqueeze(0) #turns x into 1 dimension
+
+        embedding = self.dropout(self.embedding(x))
+        #embedding shape: (1, N, embedding_size)
+
+        outputs, (hidden, cell) = self.rnn(embedding, (hidden, cell))
+        #shape of outputs: (1, N, hidden_size)
+
+        predictions = self.fc(outputs)
+        #shape of predictions: (1, N, length_of_vocab)
+
+        predictions = predictions.squeeze(0) #removes 1 from (1, N, length_of_vocab)
+
+        return predictions
+
+
+
 
 class Seq2Seq(nn.Module): #Combines encoder with decoder
     pass 
