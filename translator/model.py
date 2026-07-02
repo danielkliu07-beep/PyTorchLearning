@@ -6,13 +6,13 @@ import random
 
 import torch
 import torch.nn as nn
-from torch import device, optim
+from torch import optim
 import torch.nn.functional as F
 
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
-from translator.dataloader import SOS_token
+from constants import SOS_token, device
 
 max_length = 10
 
@@ -24,7 +24,7 @@ class EncoderRnn(nn.Module):
         super(EncoderRnn, self).__init__()
         
         self.hidden_size = hidden_size
-        self.embedding = nn.Embeddign(input_size, hidden_size)
+        self.embedding = nn.Embedding(input_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size, batch_first = True) #Applies a multi-layer gated recurent unit RNN to an input sentence
 
         self.dropout = nn.Dropout(dropout_p)
@@ -44,14 +44,14 @@ class DecoderRnn(nn.Module):
         super(DecoderRnn, self).__init__()
 
         self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.Gru(hidden_size, hidden_size, batch_first = True)
+        self.gru = nn.GRU(hidden_size, hidden_size, batch_first = True)
         self.out = nn.Linear(hidden_size, output_size)
 
     def forward(self, encoder_outputs, encoder_hidden, target_tensor = None):
 
         batch_size = encoder_outputs.size(0)
         
-        decoder_input = torch.empty(batch_size, 1, dtype = torch.long, device = device).fill_(SOS_token) #Creates a empty tensor of batch_size x 1 filled with the SOS token
+        decoder_input = torch.empty((batch_size, 1), dtype = torch.long, device = device).fill_(SOS_token) #Creates a empty tensor of batch_size x 1 filled with the SOS token
         decoder_hidden = encoder_hidden #Sets the first hidden state to the encoder's outputs (the encoder's last hidden state)
         decoder_outputs = []
 
@@ -79,7 +79,7 @@ class DecoderRnn(nn.Module):
         output, hidden = self.gru(output, hidden) #Puts it into a RNN
         output = self.out(output) #Puts it into a fully connected layer
 
-        return output
+        return output, hidden
 
 class BahdanauAttention(nn.Module):
     
@@ -114,7 +114,7 @@ class AttnDecoderRnn(nn.Module):
     def forward(self, encoder_outputs, encoder_hidden, target_tensor = None):
 
         batch_size = encoder_outputs.size(0)
-        decoder_input = torch.empty(batch_size, 1, dtype = torch.long, device = device).fill_(SOS_token)
+        decoder_input = torch.empty((batch_size, 1), dtype = torch.long, device = device).fill_(SOS_token)
         decoder_hidden = encoder_hidden
         decoder_outputs = []
         attentions = []
