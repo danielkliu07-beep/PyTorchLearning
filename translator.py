@@ -1,105 +1,119 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-from torchtext.datasets import Multi30k
-from torchtext.data import Field, BucketIterator #pre-processing
-
-import numpy as np
-import spacy #tokenizer
+from __future__ import unicode_literals, print_function, division
+from io import open
+import unicodedata
+import re
 import random
 
-from torch.utils.tensorboard import SummaryWriter
+import torch
+import torch.nn as nn
+from torch import optim
+import torch.nn.functional as F
 
+import numpy as np
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
-#Setting up the tokenizer: (can use other tokenizers that aren't spacy)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-spacy_ger = spacy.load('de') #german tokenizer
-spacy_eng = spacy.load('en') #english tokenizer
+SOS_token = 0
+EOS_token = 1
 
-def tokenizer_ger(text):
-    return [tok.text for tok in spacy_ger.tokenizer(text)]
+class Lang:
 
-    #'Hello my name is' -> ['Hello', 'my', 'name', 'is']
-
-def tokenizer_eng(text):
-    return [tok.text for tok in spacy_eng.tokenizer(text)]
-
-german = Field(tokenize = tokenizer_ger, lower = True,
-               init_token = '<sos>', eos_token = '<eos>')
-
-english = Field(tokenize = tokenizer_eng, lower = True,
-                init_token = '<sos>', eos_token = '<eos')
-
-train_data, validation_data, test_data = Multi30k.splits(exts=('.de', '.en'),
-                                                         fields = (german, english)) #training data
-
-german.build_vocab(train_data, max_size = 10000, min_freq = 2)
-english.build_vocab(train_data, max_size = 10000, min_freq = 2)
-
-#Model:
-
-class Encoder(nn.Module):
-
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
-
-        super().__init__()
-
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        self.dropout = nn.Dropout(p) #Prevents overfitting during training by randomly zeroing out elements of an input tensor
-        self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout = p)
-
-    def forward(self, x):
-        #x shape: (seq_length, N)
-
-        embedding = self.dropout(self.embedding(x)) #apply dropout to the embedding of x
-        #embedding shape: (seq_length, N, embedding_size)
-        outputs, (hidden, cell) = self.rnn(embedding) #run it through the LSTM
-
-        #output is irrelevant, (hidden, cell) is the context vector
-
-        return hidden, cell
-
-
-
-class Decoder(nn.Module):
+    def __init__(self, name):
+        self.name = name
+        self.word2index = {}
+        self.word2count = {}
+        self.index2word = {0: "SOS", 1: "EOS"}
+        self.n_words = 2
     
-    def __init__(self, input_size, embedding_size, hidden_size, output_size, num_layers, p):
-
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        self.dropout = nn.Dropout(p)
-        self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout = 0)
-
-        self.fc = nn.Linear(hidden_size, output_size) #fully connected layer
-
-    def forward(self, x, hidden, cell):
-        #shape of x is (N) but we want (1, N)
-
-        x = x.unsqueeze(0) #turns x into 1 dimension
-
-        embedding = self.dropout(self.embedding(x))
-        #embedding shape: (1, N, embedding_size)
-
-        outputs, (hidden, cell) = self.rnn(embedding, (hidden, cell))
-        #shape of outputs: (1, N, hidden_size)
-
-        predictions = self.fc(outputs)
-        #shape of predictions: (1, N, length_of_vocab)
-
-        predictions = predictions.squeeze(0) #removes 1 from (1, N, length_of_vocab)
-
-        return predictions
+    def addSentence(self, sentence):
+        for word in sentence.split(' '):
+            self.addWord(word)
+    
+    def addWord(self, word):
+        if word not in self.word2index:
+            self.word2index[word] = self.n_words 
+            self.word2count[word] = 1 #Set the count of the word to 1
+            self.index2word[self.n_words] = word #Adds the new word into the index2word list
+            self.n_words += 1
+        else:
+            self.word2count[word] += 1 #Increases the count of the word by 1
 
 
+def unicodeToAscii(s): #Turns unicode string to plain ascii
+    return ' '.join(
+        c for c in unicodedata.normalize('NFD', s)
+        if unicodedata.category(c) != 'Mn'
+    )
+    
+def normalizeString(s): #Lowercase, trim, and remove non-letter characters
+    s = unicodeToAscii(s.lower().strip())
+    s = re.sub(r"([.!?])", r" \1", s)
+    s = re.sub(r"[^a-zA-Z!?]+", r" ", s)
+    return s.strip()
+
+def readLangs(lang1, lang2, reverse = False):
+    print("Reading lines...")
+
+    #Reads the data files and splits it into lines
+    lines = open('data/%s-%s.txt' % (lang1, lang2), encoding = 'utf-8').read().strip().split('\n')
+
+    pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
+
+    if reverse: #if reverse is true, switch the input and output languages
+        pairs = [list(reversed(p)) for p in pairs]
+        input_lang = Lang(lang2)
+        output_lang = Lang(lang1)
+    else:
+        input_lang = Lang(lang1)
+        output_lang = Lang(lang2)
+    
+    return input_lang, output_lang, pairs
+
+max_length = 10
+
+eng_prefixes = (
+    "i am ", "i m ",
+    "he is", "he s ",
+    "she is", "she s ",
+    "you are", "you re ",
+    "we are", "we re ",
+    "they are", "they re "
+)
+
+def filterPair(p):
+    return len(p[0].split(' ')) < max_length and \
+            len(p[1].split(' ')) < max_length and \
+            p[1].startswith(eng_prefixes)
+
+def filterPairs(pairs):
+    return [pair for pair in pairs if filterPair(pair)]
+
+def prepareData(lang1, lang2, reverse = False):
+
+    #Gets a text file and splits it into lines and splits the lines into pairs
+    input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
+
+    print("Read %s sentence pairs" % len(pairs))
+    
+    #Transforms all pairs like "I'm to I am"
+    pairs = filterPairs(pairs)
+
+    print("Trimmed to %s sentence pairs" % len(pairs))
+    print("Counting words...")
+
+    for pair in pairs:
+        input_lang.addSentence(pair[0])
+        output_lang.addSentence(pair[1])
+    print("Counted words:")
+    print(input_lang.name, input_lang.n_words)
+    print(output_lang.name, output_lang.n_words)
+    
+    return input_lang, output_lang, pairs
+
+input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
+print(random.choice(pairs))
 
 
-class Seq2Seq(nn.Module): #Combines encoder with decoder
-    pass 
+    
 
